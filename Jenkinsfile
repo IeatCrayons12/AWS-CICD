@@ -12,32 +12,37 @@ pipeline {
     }
 
     stages {
-        stage('Login to ECR') {
-            steps {
-                sh '''
-                    aws ecr get-login-password --region $AWS_REGION | \
-                    docker login --username AWS --password-stdin $ECR_REPO
-                '''
-            }
-        }
-
-        stage('Build & Push Docker Image') {
-            steps {
-                sh '''
-                    docker build -t $ECR_REPO:latest .
-                    docker push $ECR_REPO:latest
-                '''
-            }
-        }
-
         stage('Deploy to ECS') {
             steps {
-                sh '''
-                    aws ecs update-service --cluster $ECS_CLUSTER \
-                                           --service $ECS_SERVICE \
-                                           --force-new-deployment
-                '''
+                script {
+                    echo "Updating ECS service: $ECS_SERVICE in cluster: $ECS_CLUSTER"
+
+                    sh """
+                    # Login to AWS ECR
+                    aws ecr get-login-password --region $AWS_REGION | \
+                        docker login --username AWS --password-stdin $ECR_REPO
+
+                    # Pull the latest image from ECR
+                    docker pull $ECR_REPO:latest
+
+                    # Update ECS service to force new deployment
+                    aws ecs update-service \
+                        --cluster $ECS_CLUSTER \
+                        --service $ECS_SERVICE \
+                        --force-new-deployment \
+                        --region $AWS_REGION
+                    """
+                }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployment completed successfully!"
+        }
+        failure {
+            echo "Deployment failed. Check logs for details."
         }
     }
 }
